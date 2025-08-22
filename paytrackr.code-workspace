@@ -1,0 +1,48 @@
+{
+  "folders": [
+    {
+      "name": "PayTrackr Root",
+      "path": "."
+    },
+    {
+      "name": "Backend API",
+      "path": "./backend"
+    },
+    {
+      "name": "Mobile App",
+      "path": "./mobile"
+    }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/node_modules": true,
+      "**/build": true,
+      "**/dist": true,
+      "**/.expo": true
+    },
+    "search.exclude": {
+      "**/node_modules": true,
+      "**/build": true,
+      "**/dist": true,
+      "**/.expo": true
+    },
+    "typescript.preferences.quoteStyle": "single",
+    "javascript.preferences.quoteStyle": "single",
+    "editor.codeActionsOnSave": {
+      "source.fixAll.eslint": "explicit"
+    },
+    "emmet.includeLanguages": {
+      "javascript": "javascriptreact"
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "ms-vscode.vscode-typescript-next",
+      "ms-vscode.vscode-json",
+      "esbenp.prettier-vscode",
+      "ms-vscode.vscode-eslint",
+      "expo.vscode-expo-tools",
+      "ms-vscode.vscode-react-native"
+    ]
+  }
+}

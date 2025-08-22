@@ -1,0 +1,32 @@
+{
+  "name": "paytrackr",
+  "version": "1.0.0",
+  "description": "PayTrackr - Personal Finance Management App",
+  "private": true,
+  "main": "index.js",
+  "workspaces": ["backend", "mobile"],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w backend\" \"npm start -w mobile\"",
+    "backend:dev": "npm run dev -w backend",
+    "backend:start": "npm start -w backend",
+    "mobile:start": "npm start -w mobile",
+    "mobile:android": "npm run android -w mobile",
+    "mobile:ios": "npm run ios -w mobile",
+    "install:all": "npm install --workspaces",
+    "backend:install": "npm install -w backend",
+    "mobile:install": "npm install -w mobile"
+  },
+  "keywords": [
+    "finance",
+    "tracking",
+    "mobile",
+    "react-native",
+    "node.js",
+    "mongodb"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "PayTrackr",
+    "slug": "paytrackr",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#6200EE"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.paytrackr.app"
+    },
+    "android": {
+      "package": "com.paytrackr.app"
+    }
+  }
+}
