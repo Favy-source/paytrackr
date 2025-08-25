@@ -126,6 +126,6 @@ billSchema.pre('save', function(next) {
 // Indexes for efficient queries
 billSchema.index({ user: 1, dueDate: 1 });
 billSchema.index({ user: 1, category: 1 });
-billSchema.index({ user: 1, status: 1 });
 
-module.exports = mongoose.model('Bill', billSchema);
+module.exports = mongoose.models.Bill || mongoose.model('Bill', billSchema);
+

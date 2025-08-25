@@ -55,7 +55,7 @@ const userSchema = new mongoose.Schema({
   },
   googleId: { type: String, index: true },
 
-  // Push notifications (Expo)
+  // Push notifications (Expo) — support multiple devices
   expoPushTokens: { type: [String], default: [] },
 
   // Referral System
@@ -81,7 +81,14 @@ const userSchema = new mongoose.Schema({
   lastLogin: { type: Date, default: null }
 }, {
   timestamps: true,
-  toJSON: { virtuals: true, transform(doc, ret) { delete ret.password; return ret; } },
+  toJSON: {
+    virtuals: true,
+    transform(doc, ret) {
+      delete ret.password;
+      delete ret.__v;
+      return ret;
+    }
+  },
   toObject: { virtuals: true }
 });
 
@@ -147,6 +154,16 @@ userSchema.methods.addPoints = function(points, reason = 'referral') {
   return this.save({ validateBeforeSave: false });
 };
 
+// Dedup & store Expo push token for this user (supports multiple devices)
+userSchema.methods.addExpoPushToken = async function(token) {
+  if (!token) return this;
+  await this.constructor.updateOne(
+    { _id: this._id },
+    { $addToSet: { expoPushTokens: token } }
+  );
+  return this;
+};
+
 /* =======================
    Statics
 ======================= */
@@ -177,5 +194,6 @@ userSchema.statics.processReferral = async function(newUserId, referralCode) {
 ======================= */
 userSchema.index({ email: 1 }, { unique: true });
 userSchema.index({ googleId: 1 });
+userSchema.index({ referralCode: 1 }, { unique: true, sparse: true });
 
-module.exports = mongoose.model('User', userSchema);
+module.exports = mongoose.models.User || mongoose.model('User', userSchema);

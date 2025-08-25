@@ -1,3 +1,4 @@
+// src/app.js
 const express = require('express');
 const compression = require('compression');
 const cors = require('cors');
@@ -16,6 +17,7 @@ const transactionsRoutes = require('./routes/transactions');
 const incomeRoutes = require('./routes/income');
 const analyticsRoutes = require('./routes/analytics');
 const chatRoutes = require('./routes/chat');
+const notificationsRoutes = require('./routes/notifications'); // ✅ NEW
 
 const app = express();
 app.set('trust proxy', 1);
@@ -44,8 +46,8 @@ const allowed = [
   'http://localhost:3001',
   'http://127.0.0.1:3000',
   'http://127.0.0.1:3001',
-  'http://localhost:19006',
-  'exp://localhost:19000',
+  'http://localhost:19006', // Expo web
+  'exp://localhost:19000',  // Expo native dev (not used by fetch, safe to keep)
 ].filter(Boolean);
 
 app.use(cors({
@@ -62,16 +64,23 @@ if (process.env.NODE_ENV === 'development') app.use(morgan('dev'));
 
 // API routes
 app.use('/api/auth', authRoutes);
-app.use('/api/auth', googleAuthRoutes);     // << Google OAuth (POST /api/auth/google)
+app.use('/api/auth', googleAuthRoutes);
 app.use('/api/bills', billsRoutes);
 app.use('/api/transactions', transactionsRoutes);
 app.use('/api/income', incomeRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/notifications', notificationsRoutes); // ✅ NEW
 
-// Health
+// Health (simple)
 app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'success', message: 'PayTrackr API is running!', timestamp: new Date().toISOString() });
+});
+
+// (optional) DB-aware health
+app.get('/api/health/db', (req, res) => {
+  const state = require('mongoose').connection.readyState; // 1=connected
+  res.json({ ok: state === 1, state });
 });
 
 // 404

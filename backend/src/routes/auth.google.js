@@ -1,102 +1,83 @@
-const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
+// backend/src/routes/auth.google.js
+const express = require('express');
+const { OAuth2Client } = require('google-auth-library');
+const jwt = require('jsonwebtoken');
+const User = require('../models/User'); // <-- import, don't redefine!
 
-const userSchema = new mongoose.Schema({
-  name: { type: String, required: [true, 'Name is required'], trim: true, maxlength: 50 },
-  email: {
-    type: String,
-    required: [true, 'Email is required'],
-    unique: true,
-    lowercase: true,
-    match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,})+$/, 'Please provide a valid email'],
-  },
-  password: { type: String, required: [true, 'Password is required'], minlength: 6, select: false },
-  avatar: { type: String, default: null },
+const router = express.Router();
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-  // OAuth
-  googleId: { type: String, default: null, index: true },
-  authProvider: { type: String, enum: ['local', 'google'], default: 'local' },
-
-  preferences: {
-    currency: { type: String, default: 'USD', enum: ['USD', 'EUR', 'GBP', 'NGN', 'CAD', 'AUD'] },
-    notifications: {
-      billReminders: { type: Boolean, default: true },
-      budgetAlerts: { type: Boolean, default: true },
-      weeklyReports: { type: Boolean, default: true },
-    },
-    budgetLimits: {
-      monthly: { type: Number, default: 0 },
-      categories: [{ name: String, limit: Number }],
-    },
-  },
-
-  referralCode: { type: String, unique: true, sparse: true },
-  referredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
-  points: { type: Number, default: 0, min: 0 },
-  referralStats: {
-    totalReferred: { type: Number, default: 0 },
-    totalPointsEarned: { type: Number, default: 0 },
-    lastReferralDate: { type: Date, default: null },
-  },
-
-  isActive: { type: Boolean, default: true },
-  lastLogin: { type: Date, default: null },
-}, {
-  timestamps: true,
-  toJSON: { virtuals: true },
-  toObject: { virtuals: true },
-});
-
-// Virtuals
-userSchema.virtual('bills', { ref: 'Bill', localField: '_id', foreignField: 'user' });
-userSchema.virtual('transactions', { ref: 'Transaction', localField: '_id', foreignField: 'user' });
-userSchema.virtual('income', { ref: 'Income', localField: '_id', foreignField: 'user' });
-
-// Hash password
-userSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
-  try {
-    const salt = await bcrypt.genSalt(12);
-    this.password = await bcrypt.hash(this.password, salt);
-    next();
-  } catch (e) { next(e); }
-});
-
-// Instance methods
-userSchema.methods.comparePassword = async function(candidate) {
-  return bcrypt.compare(candidate, this.password);
-};
-userSchema.methods.updateLastLogin = function() {
-  this.lastLogin = new Date();
-  return this.save({ validateBeforeSave: false });
-};
-userSchema.methods.generateReferralCode = function() {
-  if (!this.referralCode) this.referralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-  return this.referralCode;
-};
-userSchema.methods.addPoints = function(points, reason = 'referral') {
-  this.points += points;
-  if (reason === 'referral') this.referralStats.totalPointsEarned += points;
-  return this.save({ validateBeforeSave: false });
-};
-
-// Static
-userSchema.statics.processReferral = async function(newUserId, code) {
-  if (!code) return null;
-  const referrer = await this.findOne({ referralCode: code });
-  if (!referrer) return null;
-
-  await this.findByIdAndUpdate(newUserId, { referredBy: referrer._id });
-  await this.findByIdAndUpdate(referrer._id, {
-    $inc: {
-      points: 100,
-      'referralStats.totalReferred': 1,
-      'referralStats.totalPointsEarned': 100,
-    },
-    'referralStats.lastReferralDate': new Date(),
+const sendTokenResponse = (user, statusCode, res) => {
+  const token = jwt.sign(
+    { userId: user._id },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+  );
+  user.password = undefined;
+  res.status(statusCode).json({
+    status: 'success',
+    token,
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      avatar: user.avatar,
+      preferences: user.preferences,
+      referralCode: user.referralCode,
+      points: user.points,
+      referralStats: user.referralStats,
+      createdAt: user.createdAt,
+    }
   });
-
-  return referrer;
 };
 
-module.exports = mongoose.model('User', userSchema);
+// POST /api/auth/google  { idToken }
+router.post('/google', async (req, res) => {
+  try {
+    const { idToken } = req.body;
+    if (!idToken) {
+      return res.status(400).json({ status: 'error', message: 'idToken is required' });
+    }
+
+    const ticket = await client.verifyIdToken({
+      idToken,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    const { email, name, picture, sub: googleId, email_verified } = payload;
+
+    if (!email_verified) {
+      return res.status(401).json({ status: 'error', message: 'Google email not verified' });
+    }
+
+    let user = await User.findOne({ email }).select('+password');
+    if (!user) {
+      user = await User.create({
+        name: name || 'Google User',
+        email,
+        avatar: picture || null,
+        googleId,
+        authProvider: 'google',
+        // dummy password to satisfy schema; not used for Google users
+        password: Math.random().toString(36).slice(2) + Math.random().toString(36).toUpperCase().slice(2),
+      });
+      user.generateReferralCode?.();
+      await user.updateLastLogin?.();
+    } else {
+      if (!user.googleId) {
+        user.googleId = googleId;
+        user.authProvider = 'google';
+        if (!user.avatar && picture) user.avatar = picture;
+        await user.save();
+      }
+      await user.updateLastLogin?.();
+    }
+
+    return sendTokenResponse(user, 200, res);
+  } catch (e) {
+    console.error('Google auth error:', e);
+    return res.status(401).json({ status: 'error', message: 'Invalid Google token' });
+  }
+});
+
+module.exports = router;

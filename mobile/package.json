@@ -29,7 +29,7 @@
     "@react-navigation/stack": "^6.3.17",
     "axios": "^1.5.0",
     "expo": "~49.0.0",
-    "expo-auth-session": "^6.2.1",
+    "expo-auth-session": "~5.0.2",
     "expo-document-picker": "~11.5.4",
     "expo-file-system": "~15.4.5",
     "expo-linear-gradient": "~12.3.0",
@@ -50,7 +50,8 @@
     "react-native-super-grid": "^5.0.0",
     "react-native-svg": "13.9.0",
     "react-native-toast-message": "^2.1.6",
-    "react-native-vector-icons": "^10.0.0"
+    "react-native-vector-icons": "^10.0.0",
+    "expo-device": "~5.4.0"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0"
