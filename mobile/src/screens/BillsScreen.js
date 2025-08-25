@@ -1,167 +1,113 @@
+// BillsScreen.js
 import React, { useState, useEffect } from 'react';
-import {
-  View,
-  FlatList,
-  StyleSheet,
-  RefreshControl,
-} from 'react-native';
-import {
-  Card,
-  Title,
-  Paragraph,
-  Chip,
-  FAB,
-  Button,
-  useTheme,
-} from 'react-native-paper';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import Header from '../components/Header';
-import BillCard from '../components/BillCard';
+import { View, FlatList, StyleSheet } from 'react-native';
+import { Card, Title, TextInput, Button, HelperText } from 'react-native-paper';
 import { billsAPI } from '../services/api';
+import { scheduleBillReminder } from '../utils/notifications';
 
-export default function BillsScreen({ navigation }) {
-  const theme = useTheme();
+export default function BillsScreen() {
   const [bills, setBills] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState('all');
+  const [form, setForm] = useState({
+    title: '',
+    amount: '',
+    dueDate: '',
+    category: '',
+    customLabel: '', // ✅ new field
+  });
+  const [error, setError] = useState('');
+
+  const fetchBills = async () => {
+    try {
+      const res = await billsAPI.getAll();
+      setBills(res.data);
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   useEffect(() => {
     fetchBills();
   }, []);
 
-  const fetchBills = async () => {
+  const handleCreate = async () => {
     try {
-      setLoading(true);
-      const response = await billsAPI.getAll();
-      if (response.status === 'success') {
-        setBills(response.data.bills || []);
-      }
-    } catch (error) {
-      console.error('Error fetching bills:', error);
-    } finally {
-      setLoading(false);
+      const res = await billsAPI.create(form);
+      setBills((prev) => [...prev, res.data]);
+
+      // Schedule reminder
+      await scheduleBillReminder(res.data);
+
+      setForm({ title: '', amount: '', dueDate: '', category: '', customLabel: '' });
+    } catch (e) {
+      setError('Failed to create bill');
     }
   };
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await fetchBills();
-    setRefreshing(false);
-  };
-
-  const markBillAsPaid = async (billId) => {
+  const handleDelete = async (id) => {
     try {
-      const response = await billsAPI.markAsPaid(billId, {
-        paidDate: new Date().toISOString(),
-        paidAmount: bills.find(b => b._id === billId)?.amount
-      });
-      
-      if (response.status === 'success') {
-        await fetchBills();
-      }
-    } catch (error) {
-      console.error('Error marking bill as paid:', error);
+      await billsAPI.delete(id);
+      setBills((prev) => prev.filter((b) => b._id !== id));
+    } catch (e) {
+      console.error('Delete failed:', e);
     }
   };
-
-  const getFilteredBills = () => {
-    const now = new Date();
-    
-    switch (activeTab) {
-      case 'upcoming':
-        return bills.filter(bill => {
-          const dueDate = new Date(bill.dueDate);
-          return dueDate > now && bill.status !== 'paid';
-        });
-      case 'overdue':
-        return bills.filter(bill => {
-          const dueDate = new Date(bill.dueDate);
-          return dueDate < now && bill.status !== 'paid';
-        });
-      case 'paid':
-        return bills.filter(bill => bill.status === 'paid');
-      default:
-        return bills;
-    }
-  };
-
-  const renderBill = ({ item }) => (
-    <BillCard
-      bill={item}
-      onPress={() => navigation.navigate('BillDetails', { billId: item._id })}
-      onMarkPaid={() => markBillAsPaid(item._id)}
-    />
-  );
-
-  const filteredBills = getFilteredBills();
 
   return (
     <View style={styles.container}>
-      <Header title="Bills" />
-      
-      <View style={styles.content}>
-        <View style={styles.tabContainer}>
-          {['all', 'upcoming', 'overdue', 'paid'].map((tab) => (
-            <Chip
-              key={tab}
-              selected={activeTab === tab}
-              onPress={() => setActiveTab(tab)}
-              style={styles.tabChip}
-              mode={activeTab === tab ? 'flat' : 'outlined'}
-            >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
-            </Chip>
-          ))}
-        </View>
+      <Card>
+        <Card.Content>
+          <Title>Create Bill</Title>
+          <TextInput
+            label="Title"
+            value={form.title}
+            onChangeText={(text) => setForm({ ...form, title: text })}
+          />
+          <TextInput
+            label="Amount"
+            keyboardType="numeric"
+            value={form.amount}
+            onChangeText={(text) => setForm({ ...form, amount: text })}
+          />
+          <TextInput
+            label="Due Date (YYYY-MM-DD)"
+            value={form.dueDate}
+            onChangeText={(text) => setForm({ ...form, dueDate: text })}
+          />
+          <TextInput
+            label="Category"
+            value={form.category}
+            onChangeText={(text) => setForm({ ...form, category: text })}
+          />
+          <TextInput
+            label="Custom Label"
+            value={form.customLabel}
+            onChangeText={(text) => setForm({ ...form, customLabel: text })}
+          />
+          <HelperText type="error" visible={!!error}>{error}</HelperText>
 
-        <FlatList
-          data={filteredBills}
-          renderItem={renderBill}
-          keyExtractor={(item) => item._id}
-          contentContainerStyle={styles.list}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
-          showsVerticalScrollIndicator={false}
-        />
-      </View>
+          <Button mode="contained" onPress={handleCreate}>Add Bill</Button>
+        </Card.Content>
+      </Card>
 
-      <FAB
-        icon="plus"
-        style={styles.fab}
-        onPress={() => navigation.navigate('AddBill')}
+      <FlatList
+        data={bills}
+        keyExtractor={(item) => item._id}
+        renderItem={({ item }) => (
+          <Card style={styles.billCard}>
+            <Card.Content>
+              <Title>{item.title} - ${item.amount}</Title>
+              <Button onPress={() => handleDelete(item._id)} mode="outlined" color="red">
+                Delete
+              </Button>
+            </Card.Content>
+          </Card>
+        )}
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  content: {
-    flex: 1,
-    padding: 16,
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    marginBottom: 16,
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  tabChip: {
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  list: {
-    paddingBottom: 80,
-  },
-  fab: {
-    position: 'absolute',
-    margin: 16,
-    right: 0,
-    bottom: 0,
-  },
+  container: { flex: 1, padding: 16 },
+  billCard: { marginVertical: 8 },
 });
