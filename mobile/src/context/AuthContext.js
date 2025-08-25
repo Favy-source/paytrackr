@@ -5,129 +5,96 @@ import { authAPI } from '../services/api';
 const AuthContext = createContext({});
 
 export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within an AuthProvider');
+  return ctx;
 };
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [token, setToken] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    checkAuthState();
-  }, []);
-
-  const checkAuthState = async () => {
+  useEffect(() => { (async () => {
     try {
-      const storedToken = await AsyncStorage.getItem('authToken');
-      const storedUser = await AsyncStorage.getItem('user');
-      
-      if (storedToken && storedUser) {
-        setToken(storedToken);
-        setUser(JSON.parse(storedUser));
-      }
-    } catch (error) {
-      console.error('Error checking auth state:', error);
-    } finally {
-      setLoading(false);
-    }
+      const [t, u] = await Promise.all([
+        AsyncStorage.getItem('authToken'),
+        AsyncStorage.getItem('user'),
+      ]);
+      if (t && u) { setToken(t); setUser(JSON.parse(u)); }
+    } finally { setLoading(false); }
+  })(); }, []);
+
+  const persist = async (newToken, userData) => {
+    await AsyncStorage.setItem('authToken', newToken);
+    await AsyncStorage.setItem('user', JSON.stringify(userData));
+    setToken(newToken);
+    setUser(userData);
   };
 
   const login = async (email, password) => {
     try {
       setLoading(true);
-      const response = await authAPI.login(email, password);
-      
-      if (response.status === 'success') {
-        const { token: newToken, user: userData } = response.data;
-        
-        await AsyncStorage.setItem('authToken', newToken);
-        await AsyncStorage.setItem('user', JSON.stringify(userData));
-        
-        setToken(newToken);
-        setUser(userData);
-        
+      const res = await authAPI.login(email, password); // axios returns body
+      if (res.status === 'success') {
+        const { token: newToken, user: userData } = res;
+        await persist(newToken, userData);
         return { success: true };
-      } else {
-        return { success: false, message: response.message };
       }
-    } catch (error) {
-      console.error('Login error:', error);
-      return { 
-        success: false, 
-        message: error.response?.data?.message || 'Login failed' 
-      };
-    } finally {
-      setLoading(false);
-    }
+      return { success: false, message: res.message || 'Login failed' };
+    } catch (e) {
+      return { success: false, message: e.response?.data?.message || 'Login failed' };
+    } finally { setLoading(false); }
   };
 
-  const register = async (userData) => {
+  const register = async (data) => {
     try {
       setLoading(true);
-      const response = await authAPI.register(userData);
-      
-      if (response.status === 'success') {
-        const { token: newToken, user: newUser } = response.data;
-        
-        await AsyncStorage.setItem('authToken', newToken);
-        await AsyncStorage.setItem('user', JSON.stringify(newUser));
-        
-        setToken(newToken);
-        setUser(newUser);
-        
+      const res = await authAPI.register(data);
+      if (res.status === 'success') {
+        const { token: newToken, user: userData } = res;
+        await persist(newToken, userData);
         return { success: true };
-      } else {
-        return { success: false, message: response.message };
       }
-    } catch (error) {
-      console.error('Registration error:', error);
-      return { 
-        success: false, 
-        message: error.response?.data?.message || 'Registration failed' 
-      };
-    } finally {
-      setLoading(false);
-    }
+      return { success: false, message: res.message || 'Registration failed' };
+    } catch (e) {
+      return { success: false, message: e.response?.data?.message || 'Registration failed' };
+    } finally { setLoading(false); }
+  };
+
+  const loginWithGoogle = async (idToken) => {
+    try {
+      setLoading(true);
+      const res = await authAPI.google(idToken);
+      if (res.status === 'success') {
+        const { token: newToken, user: userData } = res;
+        await persist(newToken, userData);
+        return { success: true };
+      }
+      return { success: false, message: res.message || 'Google sign-in failed' };
+    } catch (e) {
+      return { success: false, message: e.response?.data?.message || 'Google sign-in failed' };
+    } finally { setLoading(false); }
   };
 
   const logout = async () => {
-    try {
-      await AsyncStorage.multiRemove(['authToken', 'user']);
-      setToken(null);
-      setUser(null);
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
+    await AsyncStorage.multiRemove(['authToken', 'user']);
+    setToken(null); setUser(null);
   };
 
-  const updateUser = async (userData) => {
-    try {
-      const updatedUser = { ...user, ...userData };
-      await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
-      setUser(updatedUser);
-    } catch (error) {
-      console.error('Update user error:', error);
-    }
-  };
-
-  const value = {
-    user,
-    token,
-    loading,
-    login,
-    register,
-    logout,
-    updateUser,
-    isAuthenticated: !!token && !!user,
+  const updateUser = async (patch) => {
+    const updated = { ...user, ...patch };
+    await AsyncStorage.setItem('user', JSON.stringify(updated));
+    setUser(updated);
   };
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider value={{
+      user, token, loading,
+      login, register, loginWithGoogle,
+      logout, updateUser,
+      isAuthenticated: !!token && !!user,
+    }}>
       {children}
     </AuthContext.Provider>
   );

@@ -3,7 +3,7 @@ import { DefaultTheme } from 'react-native-paper';
 // API Configuration
 export const API_BASE_URL = __DEV__ 
   ? 'http://localhost:3000/api'
-  : 'https://your-production-api.com/api';
+  : 'https://natural-gentleness-production.up.railway.app/api';
 
 // Theme Configuration
 export const theme = {

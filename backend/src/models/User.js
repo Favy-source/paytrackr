@@ -13,18 +13,39 @@ const userSchema = new mongoose.Schema({
     required: [true, 'Email is required'],
     unique: true,
     lowercase: true,
-    match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Please provide a valid email']
+    index: true,
+    match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,})+$/, 'Please provide a valid email']
   },
+
+  // Local auth password (conditionally required)
   password: {
     type: String,
-    required: [true, 'Password is required'],
+    select: false,
     minlength: [6, 'Password must be at least 6 characters long'],
-    select: false // Don't include password in queries by default
+    // Required only for local users
+    required: function () {
+      return this.authProvider === 'local';
+    }
   },
+
+  // Social auth
+  googleId: {
+    type: String,
+    index: true,
+    sparse: true
+  },
+  authProvider: {
+    type: String,
+    enum: ['local', 'google'],
+    default: 'local',
+    index: true
+  },
+
   avatar: {
     type: String,
     default: null
   },
+
   preferences: {
     currency: {
       type: String,
@@ -44,11 +65,12 @@ const userSchema = new mongoose.Schema({
       }]
     }
   },
+
   // Referral System
   referralCode: {
     type: String,
     unique: true,
-    sparse: true // Allows multiple null values
+    sparse: true // Allows multiple nulls
   },
   referredBy: {
     type: mongoose.Schema.Types.ObjectId,
@@ -65,6 +87,7 @@ const userSchema = new mongoose.Schema({
     totalPointsEarned: { type: Number, default: 0 },
     lastReferralDate: { type: Date, default: null }
   },
+
   isActive: {
     type: Boolean,
     default: true
@@ -75,65 +98,62 @@ const userSchema = new mongoose.Schema({
   }
 }, {
   timestamps: true,
-  toJSON: { virtuals: true },
+  toJSON: { virtuals: true, transform: (_, ret) => { delete ret.password; return ret; } },
   toObject: { virtuals: true }
 });
 
-// Virtual for user's bills
+/* ---------- Virtuals ---------- */
 userSchema.virtual('bills', {
   ref: 'Bill',
   localField: '_id',
   foreignField: 'user'
 });
 
-// Virtual for user's transactions
 userSchema.virtual('transactions', {
   ref: 'Transaction',
   localField: '_id',
   foreignField: 'user'
 });
 
-// Virtual for user's income
 userSchema.virtual('income', {
   ref: 'Income',
   localField: '_id',
   foreignField: 'user'
 });
 
-// Pre-save middleware to hash password
-userSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
-  
+/* ---------- Hooks ---------- */
+// Hash password if modified/present
+userSchema.pre('save', async function (next) {
+  if (!this.isModified('password') || !this.password) return next();
   try {
     const salt = await bcrypt.genSalt(12);
     this.password = await bcrypt.hash(this.password, salt);
     next();
-  } catch (error) {
-    next(error);
+  } catch (err) {
+    next(err);
   }
 });
 
-// Instance method to check password
-userSchema.methods.comparePassword = async function(candidatePassword) {
-  return await bcrypt.compare(candidatePassword, this.password);
+/* ---------- Instance Methods ---------- */
+userSchema.methods.comparePassword = async function (candidatePassword) {
+  // If user has no password (e.g., Google-only), deny local login
+  if (!this.password) return false;
+  return bcrypt.compare(candidatePassword, this.password);
 };
 
-// Instance method to update last login
-userSchema.methods.updateLastLogin = function() {
+userSchema.methods.updateLastLogin = function () {
   this.lastLogin = new Date();
   return this.save({ validateBeforeSave: false });
 };
 
-// Instance method to generate referral code
-userSchema.methods.generateReferralCode = function() {
+userSchema.methods.generateReferralCode = function () {
   if (!this.referralCode) {
     this.referralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
   }
   return this.referralCode;
 };
 
-// Instance method to add points
-userSchema.methods.addPoints = function(points, reason = 'referral') {
+userSchema.methods.addPoints = function (points, reason = 'referral') {
   this.points += points;
   if (reason === 'referral') {
     this.referralStats.totalPointsEarned += points;
@@ -141,28 +161,28 @@ userSchema.methods.addPoints = function(points, reason = 'referral') {
   return this.save({ validateBeforeSave: false });
 };
 
-// Static method to process referral
-userSchema.statics.processReferral = async function(newUserId, referralCode) {
+/* ---------- Statics ---------- */
+userSchema.statics.processReferral = async function (newUserId, referralCode) {
   if (!referralCode) return null;
-  
+
   const referrer = await this.findOne({ referralCode });
   if (!referrer) return null;
-  
-  // Update new user
-  await this.findByIdAndUpdate(newUserId, { 
-    referredBy: referrer._id 
+
+  // Link new user
+  await this.findByIdAndUpdate(newUserId, {
+    referredBy: referrer._id
   });
-  
-  // Update referrer
+
+  // Update referrer’s stats/points
   await this.findByIdAndUpdate(referrer._id, {
-    $inc: { 
+    $inc: {
       points: 100,
       'referralStats.totalReferred': 1,
       'referralStats.totalPointsEarned': 100
     },
     'referralStats.lastReferralDate': new Date()
   });
-  
+
   return referrer;
 };
 

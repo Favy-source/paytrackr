@@ -2,50 +2,36 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL } from '../utils/constants';
 
-// Create axios instance
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 10000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  headers: { 'Content-Type': 'application/json' },
 });
 
-// Request interceptor to add auth token
 api.interceptors.request.use(
   async (config) => {
     try {
       const token = await AsyncStorage.getItem('authToken');
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
-    } catch (error) {
-      console.error('Error getting auth token:', error);
-    }
+      if (token) config.headers.Authorization = `Bearer ${token}`;
+    } catch (e) { /* noop */ }
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
-// Response interceptor for error handling
 api.interceptors.response.use(
   (response) => response.data,
   async (error) => {
-    if (error.response?.status === 401) {
-      // Token expired or invalid
-      await AsyncStorage.multiRemove(['authToken', 'user']);
-      // Redirect to login screen or show auth modal
-    }
+    if (error.response?.status === 401) await AsyncStorage.multiRemove(['authToken', 'user']);
     return Promise.reject(error);
   }
 );
 
-// Auth API
+// ---- APIs ----
 export const authAPI = {
   login: (email, password) => api.post('/auth/login', { email, password }),
   register: (userData) => api.post('/auth/register', userData),
+  google: (idToken) => api.post('/auth/google', { idToken }),   // << added
   getProfile: () => api.get('/auth/me'),
   updateProfile: (userData) => api.put('/auth/profile', userData),
   changePassword: (passwords) => api.put('/auth/change-password', passwords),
@@ -53,7 +39,6 @@ export const authAPI = {
   validateReferralCode: (code) => api.get(`/auth/validate-referral/${code}`),
 };
 
-// Transactions API
 export const transactionsAPI = {
   getAll: (params = {}) => api.get('/transactions', { params }),
   getById: (id) => api.get(`/transactions/${id}`),
@@ -65,7 +50,6 @@ export const transactionsAPI = {
   getMonthlyTrend: (params = {}) => api.get('/transactions/monthly-trend', { params }),
 };
 
-// Bills API
 export const billsAPI = {
   getAll: (params = {}) => api.get('/bills', { params }),
   getById: (id) => api.get(`/bills/${id}`),
@@ -77,7 +61,6 @@ export const billsAPI = {
   getSummary: () => api.get('/bills/summary'),
 };
 
-// Income API
 export const incomeAPI = {
   getAll: (params = {}) => api.get('/income', { params }),
   getById: (id) => api.get(`/income/${id}`),
@@ -89,7 +72,6 @@ export const incomeAPI = {
   updateNextDate: (id, nextDate) => api.put(`/income/${id}/next-date`, { nextDate }),
 };
 
-// Analytics API
 export const analyticsAPI = {
   getDashboard: () => api.get('/analytics/dashboard'),
   getSpending: (params = {}) => api.get('/analytics/spending', { params }),
@@ -98,7 +80,6 @@ export const analyticsAPI = {
   getFinancialHealth: () => api.get('/analytics/financial-health'),
 };
 
-// Chat API
 export const chatAPI = {
   sendMessage: (message) => api.post('/chat/message', { message }),
   getSuggestions: () => api.get('/chat/suggestions'),

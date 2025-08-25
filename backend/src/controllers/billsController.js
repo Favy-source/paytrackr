@@ -1,3 +1,4 @@
+// backend/src/controllers/billsController.js
 const { validationResult } = require('express-validator');
 const Bill = require('../models/Bill');
 
@@ -17,33 +18,29 @@ const getBills = async (req, res) => {
       search
     } = req.query;
 
-    // Build query
     const query = { user: req.user.id, isActive: true };
-    
+
     if (status) query.status = status;
     if (category) query.category = category;
     if (frequency) query.frequency = frequency;
-    
-    // Search functionality
+
     if (search) {
       query.$or = [
         { title: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } }
+        { description: { $regex: search, $options: 'i' } },
+        { customLabel: { $regex: search, $options: 'i' } } // 👈 include customLabel
       ];
     }
 
-    // Build sort object
     const sort = {};
     sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
 
-    // Execute query with pagination
     const bills = await Bill.find(query)
       .sort(sort)
       .limit(limit * 1)
       .skip((page - 1) * limit)
       .exec();
 
-    // Get total count
     const total = await Bill.countDocuments(query);
 
     res.status(200).json({
@@ -56,13 +53,9 @@ const getBills = async (req, res) => {
       },
       data: bills
     });
-
   } catch (error) {
     console.error('Get bills error:', error);
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to get bills'
-    });
+    res.status(500).json({ status: 'error', message: 'Failed to get bills' });
   }
 };
 
@@ -77,23 +70,13 @@ const getBill = async (req, res) => {
     });
 
     if (!bill) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Bill not found'
-      });
+      return res.status(404).json({ status: 'error', message: 'Bill not found' });
     }
 
-    res.status(200).json({
-      status: 'success',
-      data: bill
-    });
-
+    res.status(200).json({ status: 'success', data: bill });
   } catch (error) {
     console.error('Get bill error:', error);
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to get bill'
-    });
+    res.status(500).json({ status: 'error', message: 'Failed to get bill' });
   }
 };
 
@@ -116,6 +99,14 @@ const createBill = async (req, res) => {
       user: req.user.id
     };
 
+    // ✅ Ensure customLabel comes through when category is "custom"
+    if (billData.category === 'custom' && !billData.customLabel) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Custom label is required when category is "custom"'
+      });
+    }
+
     const bill = new Bill(billData);
     await bill.save();
 
@@ -124,13 +115,9 @@ const createBill = async (req, res) => {
       message: 'Bill created successfully',
       data: bill
     });
-
   } catch (error) {
     console.error('Create bill error:', error);
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to create bill'
-    });
+    res.status(500).json({ status: 'error', message: 'Failed to create bill' });
   }
 };
 
@@ -148,6 +135,14 @@ const updateBill = async (req, res) => {
       });
     }
 
+    // ✅ Same validation for update
+    if (req.body.category === 'custom' && !req.body.customLabel) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Custom label is required when category is "custom"'
+      });
+    }
+
     const bill = await Bill.findOneAndUpdate(
       { _id: req.params.id, user: req.user.id },
       req.body,
@@ -155,10 +150,7 @@ const updateBill = async (req, res) => {
     );
 
     if (!bill) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Bill not found'
-      });
+      return res.status(404).json({ status: 'error', message: 'Bill not found' });
     }
 
     res.status(200).json({
@@ -166,13 +158,9 @@ const updateBill = async (req, res) => {
       message: 'Bill updated successfully',
       data: bill
     });
-
   } catch (error) {
     console.error('Update bill error:', error);
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to update bill'
-    });
+    res.status(500).json({ status: 'error', message: 'Failed to update bill' });
   }
 };
 
@@ -189,13 +177,9 @@ const markBillAsPaid = async (req, res) => {
     });
 
     if (!bill) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Bill not found'
-      });
+      return res.status(404).json({ status: 'error', message: 'Bill not found' });
     }
 
-    // Add payment to history
     bill.paymentHistory.push({
       paidDate: new Date(),
       amount: amount || bill.amount,
@@ -211,17 +195,13 @@ const markBillAsPaid = async (req, res) => {
       message: 'Bill marked as paid',
       data: bill
     });
-
   } catch (error) {
     console.error('Mark bill as paid error:', error);
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to mark bill as paid'
-    });
+    res.status(500).json({ status: 'error', message: 'Failed to mark bill as paid' });
   }
 };
 
-// @desc    Delete bill
+// @desc    Delete bill (soft delete)
 // @route   DELETE /api/bills/:id
 // @access  Private
 const deleteBill = async (req, res) => {
@@ -233,23 +213,13 @@ const deleteBill = async (req, res) => {
     );
 
     if (!bill) {
-      return res.status(404).json({
-        status: 'error',
-        message: 'Bill not found'
-      });
+      return res.status(404).json({ status: 'error', message: 'Bill not found' });
     }
 
-    res.status(200).json({
-      status: 'success',
-      message: 'Bill deleted successfully'
-    });
-
+    res.status(200).json({ status: 'success', message: 'Bill deleted successfully' });
   } catch (error) {
     console.error('Delete bill error:', error);
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to delete bill'
-    });
+    res.status(500).json({ status: 'error', message: 'Failed to delete bill' });
   }
 };
 
@@ -274,13 +244,9 @@ const getUpcomingBills = async (req, res) => {
       results: bills.length,
       data: bills
     });
-
   } catch (error) {
     console.error('Get upcoming bills error:', error);
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to get upcoming bills'
-    });
+    res.status(500).json({ status: 'error', message: 'Failed to get upcoming bills' });
   }
 };
 
@@ -317,19 +283,11 @@ const getBillsSummary = async (req, res) => {
 
     res.status(200).json({
       status: 'success',
-      data: {
-        summary,
-        overdueBills,
-        upcomingBills
-      }
+      data: { summary, overdueBills, upcomingBills }
     });
-
   } catch (error) {
     console.error('Get bills summary error:', error);
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to get bills summary'
-    });
+    res.status(500).json({ status: 'error', message: 'Failed to get bills summary' });
   }
 };
 

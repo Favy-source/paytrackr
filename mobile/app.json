@@ -5,6 +5,8 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
+    "scheme": "paytrackr",
+    "owner": "favy-source",
     "splash": {
       "resizeMode": "contain",
       "backgroundColor": "#6200EE"
@@ -17,7 +19,14 @@
       "bundleIdentifier": "com.paytrackr.app"
     },
     "android": {
-      "package": "com.paytrackr.app"
+      "package": "com.paytrackr.app",
+      "permissions": []
+    },
+    "extra": {
+      "eas": {
+        "projectId": "01f4ce84-d573-4a48-b334-80d287f4b33b"
+      },
+      "apiUrl": "https://natural-gentleness-production.up.railway.app/api"
     }
   }
 }

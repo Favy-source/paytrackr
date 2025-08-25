@@ -1,3 +1,4 @@
+// backend/src/models/Bill.js
 const mongoose = require('mongoose');
 
 const billSchema = new mongoose.Schema({
@@ -36,8 +37,16 @@ const billSchema = new mongoose.Schema({
       'transportation',
       'healthcare',
       'entertainment',
-      'other'
+      'other',
+      'custom'              // 👈 allow custom category
     ]
+  },
+  // 👇 optional label users can type when category === 'custom'
+  customLabel: {
+    type: String,
+    trim: true,
+    maxlength: [40, 'Custom label cannot exceed 40 characters'],
+    default: undefined
   },
   dueDate: {
     type: Date,
@@ -84,6 +93,14 @@ const billSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
+// ✅ Require customLabel if category is 'custom'
+billSchema.pre('validate', function(next) {
+  if (this.category === 'custom' && !this.customLabel) {
+    this.invalidate('customLabel', 'Custom label is required when category is "custom"');
+  }
+  next();
+});
+
 // Virtual for days until due
 billSchema.virtual('daysUntilDue').get(function() {
   const today = new Date();
@@ -106,7 +123,7 @@ billSchema.pre('save', function(next) {
   next();
 });
 
-// Index for efficient queries
+// Indexes for efficient queries
 billSchema.index({ user: 1, dueDate: 1 });
 billSchema.index({ user: 1, category: 1 });
 billSchema.index({ user: 1, status: 1 });
