@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 import {
   View,
   ScrollView,
@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Dimensions,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
 import {
   Card,
@@ -22,7 +23,7 @@ import {
 import { LineChart, PieChart } from 'react-native-chart-kit';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AuthContext } from '../context/AuthContext';
-import { authAPI } from '../services/api';
+import { authAPI, analyticsAPI, transactionsAPI, billsAPI, incomeAPI } from '../services/api';
 import Header from '../components/Header';
 
 const { width } = Dimensions.get('window');
@@ -31,18 +32,57 @@ export default function HomeScreen({ navigation }) {
   const theme = useTheme();
   const { user } = useContext(AuthContext);
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState({
-    totalIncome: 5000,
-    totalExpenses: 3200,
-    totalBills: 8,
-    upcomingBills: 3,
+    totalIncome: 0,
+    totalExpenses: 0,
+    totalBills: 0,
+    upcomingBills: 0,
     recentTransactions: [],
+    balance: 0,
+    monthlyTrend: [],
+    spendingByCategory: [],
   });
 
-  const onRefresh = React.useCallback(() => {
+  // Load dashboard data on component mount
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true);
+      
+      // Fetch dashboard analytics
+      const [dashboard, transactions, bills, income] = await Promise.all([
+        analyticsAPI.getDashboard().catch(() => ({ totalIncome: 0, totalExpenses: 0 })),
+        transactionsAPI.getAll({ limit: 5 }).catch(() => []),
+        billsAPI.getSummary().catch(() => ({ total: 0, upcoming: 0 })),
+        incomeAPI.getSummary().catch(() => ({ total: 0 })),
+      ]);
+
+      setDashboardData({
+        totalIncome: dashboard.totalIncome || income.total || 0,
+        totalExpenses: dashboard.totalExpenses || 0,
+        totalBills: bills.total || 0,
+        upcomingBills: bills.upcoming || 0,
+        recentTransactions: Array.isArray(transactions) ? transactions : [],
+        balance: (dashboard.totalIncome || income.total || 0) - (dashboard.totalExpenses || 0),
+        monthlyTrend: dashboard.monthlyTrend || [],
+        spendingByCategory: dashboard.spendingByCategory || [],
+      });
+    } catch (error) {
+      console.error('Error loading dashboard data:', error);
+      Alert.alert('Error', 'Failed to load dashboard data. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
-    // TODO: Fetch fresh data from API
-    setTimeout(() => setRefreshing(false), 2000);
+    await loadDashboardData();
+    setRefreshing(false);
   }, []);
 
   const handleReferral = () => {
@@ -51,47 +91,68 @@ export default function HomeScreen({ navigation }) {
 
   const balance = dashboardData.totalIncome - dashboardData.totalExpenses;
 
-  const chartData = {
-    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
-    datasets: [
-      {
-        data: [2000, 2500, 2200, 2800, 3000, 3200],
-        color: (opacity = 1) => `rgba(81, 149, 255, ${opacity})`,
-        strokeWidth: 2,
-      },
-    ],
-  };
+  // Dynamic chart data based on API response
+  const chartData = React.useMemo(() => {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
+    const trendData = dashboardData.monthlyTrend?.slice(-6) || [];
+    
+    return {
+      labels: months.slice(-trendData.length),
+      datasets: [
+        {
+          data: trendData.length > 0 ? trendData : [2000, 2500, 2200, 2800, 3000, 3200],
+          color: (opacity = 1) => `rgba(81, 149, 255, ${opacity})`,
+          strokeWidth: 2,
+        },
+      ],
+    };
+  }, [dashboardData.monthlyTrend]);
 
-  const expenseData = [
-    {
-      name: 'Food',
-      amount: 800,
-      color: '#FF6384',
-      legendFontColor: '#7F7F7F',
-      legendFontSize: 12,
-    },
-    {
-      name: 'Transport',
-      amount: 600,
-      color: '#36A2EB',
-      legendFontColor: '#7F7F7F',
-      legendFontSize: 12,
-    },
-    {
-      name: 'Bills',
-      amount: 1200,
-      color: '#FFCE56',
-      legendFontColor: '#7F7F7F',
-      legendFontSize: 12,
-    },
-    {
-      name: 'Other',
-      amount: 600,
-      color: '#4BC0C0',
-      legendFontColor: '#7F7F7F',
-      legendFontSize: 12,
-    },
-  ];
+  // Dynamic expense data based on API response
+  const expenseData = React.useMemo(() => {
+    if (dashboardData.spendingByCategory?.length > 0) {
+      const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40'];
+      return dashboardData.spendingByCategory.map((category, index) => ({
+        name: category.name || `Category ${index + 1}`,
+        amount: category.amount || 0,
+        color: colors[index % colors.length],
+        legendFontColor: '#7F7F7F',
+        legendFontSize: 12,
+      }));
+    }
+    
+    // Fallback to default data
+    return [
+      {
+        name: 'Food',
+        amount: 800,
+        color: '#FF6384',
+        legendFontColor: '#7F7F7F',
+        legendFontSize: 12,
+      },
+      {
+        name: 'Transport',
+        amount: 600,
+        color: '#36A2EB',
+        legendFontColor: '#7F7F7F',
+        legendFontSize: 12,
+      },
+      {
+        name: 'Bills',
+        amount: 1200,
+        color: '#FFCE56',
+        legendFontColor: '#7F7F7F',
+        legendFontSize: 12,
+      },
+      {
+        name: 'Other',
+        amount: 600,
+        color: '#4BC0C0',
+        legendFontColor: '#7F7F7F',
+        legendFontSize: 12,
+      },
+    ];
+  }, [dashboardData.spendingByCategory]);
 
   return (
     <View style={styles.container}>
@@ -113,121 +174,130 @@ export default function HomeScreen({ navigation }) {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {/* Referral Card */}
-        {user?.referralCode && (
-          <Card style={styles.referralCard}>
-            <Card.Content>
-              <View style={styles.referralHeader}>
-                <View style={styles.referralContent}>
-                  <Title style={styles.referralTitle}>Invite friends, earn points!</Title>
-                  <Paragraph style={styles.referralSubtitle}>
-                    Share your referral code and earn 100 points for each friend who joins PayTrackr.
-                  </Paragraph>
-                  <View style={styles.referralCodeContainer}>
-                    <Text style={styles.referralCodeLabel}>Your code:</Text>
-                    <Text style={styles.referralCode}>{user.referralCode}</Text>
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>Loading your financial data...</Text>
+          </View>
+        ) : (
+          <>
+            {/* Referral Card */}
+            {user?.referralCode && (
+              <Card style={styles.referralCard}>
+                <Card.Content>
+                  <View style={styles.referralHeader}>
+                    <View style={styles.referralContent}>
+                      <Title style={styles.referralTitle}>Invite friends, earn points!</Title>
+                      <Paragraph style={styles.referralSubtitle}>
+                        Share your referral code and earn 100 points for each friend who joins PayTrackr.
+                      </Paragraph>
+                      <View style={styles.referralCodeContainer}>
+                        <Text style={styles.referralCodeLabel}>Your code:</Text>
+                        <Text style={styles.referralCode}>{user.referralCode}</Text>
+                      </View>
+                      <View style={styles.pointsContainer}>
+                        <MaterialCommunityIcons name="star-circle" size={20} color="#FFD700" />
+                        <Text style={styles.pointsText}>{user.points || 0} points</Text>
+                      </View>
+                    </View>
+                    <Avatar.Icon
+                      size={60}
+                      icon="gift"
+                      style={styles.referralIcon}
+                    />
                   </View>
-                  <View style={styles.pointsContainer}>
-                    <MaterialCommunityIcons name="star-circle" size={20} color="#FFD700" />
-                    <Text style={styles.pointsText}>{user.points || 0} points</Text>
+                  <Button
+                    mode="contained"
+                    onPress={handleReferral}
+                    style={styles.referralButton}
+                    icon="share"
+                  >
+                    Share & Earn
+                  </Button>
+                </Card.Content>
+              </Card>
+            )}
+
+            {/* Balance Card */}
+            <Card style={styles.balanceCard}>
+              <Card.Content>
+                <Title style={styles.balanceTitle}>Current Balance</Title>
+                <Text style={[styles.balanceAmount, { color: balance >= 0 ? '#4CAF50' : '#F44336' }]}>
+                  ${balance.toLocaleString()}
+                </Text>
+                <View style={styles.balanceRow}>
+                  <View style={styles.balanceItem}>
+                    <Text style={styles.balanceLabel}>Income</Text>
+                    <Text style={[styles.balanceValue, { color: '#4CAF50' }]}>
+                      +${dashboardData.totalIncome.toLocaleString()}
+                    </Text>
+                  </View>
+                  <View style={styles.balanceItem}>
+                    <Text style={styles.balanceLabel}>Expenses</Text>
+                    <Text style={[styles.balanceValue, { color: '#F44336' }]}>
+                      -${dashboardData.totalExpenses.toLocaleString()}
+                    </Text>
                   </View>
                 </View>
-                <Avatar.Icon
-                  size={60}
-                  icon="gift"
-                  style={styles.referralIcon}
+              </Card.Content>
+            </Card>
+
+            {/* Quick Stats */}
+            <View style={styles.quickStats}>
+              <Surface style={styles.statCard}>
+                <Text style={styles.statNumber}>{dashboardData.totalBills}</Text>
+                <Text style={styles.statLabel}>Total Bills</Text>
+              </Surface>
+              <Surface style={styles.statCard}>
+                <Text style={[styles.statNumber, { color: '#FF9800' }]}>
+                  {dashboardData.upcomingBills}
+                </Text>
+                <Text style={styles.statLabel}>Due Soon</Text>
+              </Surface>
+            </View>
+
+            {/* Spending Trend Chart */}
+            <Card style={styles.chartCard}>
+              <Card.Content>
+                <Title>Spending Trend</Title>
+                <LineChart
+                  data={chartData}
+                  width={width - 60}
+                  height={200}
+                  chartConfig={{
+                    backgroundColor: theme.colors.surface,
+                    backgroundGradientFrom: theme.colors.surface,
+                    backgroundGradientTo: theme.colors.surface,
+                    decimalPlaces: 0,
+                    color: (opacity = 1) => `rgba(81, 149, 255, ${opacity})`,
+                    labelColor: (opacity = 1) => theme.colors.onSurface,
+                  }}
+                  bezier
+                  style={styles.chart}
                 />
-              </View>
-              <Button
-                mode="contained"
-                onPress={handleReferral}
-                style={styles.referralButton}
-                icon="share"
-              >
-                Share & Earn
-              </Button>
-            </Card.Content>
-          </Card>
+              </Card.Content>
+            </Card>
+
+            {/* Expense Breakdown */}
+            <Card style={styles.chartCard}>
+              <Card.Content>
+                <Title>Expense Breakdown</Title>
+                <PieChart
+                  data={expenseData}
+                  width={width - 60}
+                  height={200}
+                  chartConfig={{
+                    color: (opacity = 1) => theme.colors.onSurface,
+                  }}
+                  accessor="amount"
+                  backgroundColor="transparent"
+                  paddingLeft="15"
+                  style={styles.chart}
+                />
+              </Card.Content>
+            </Card>
+          </>
         )}
 
-        {/* Balance Card */}
-        <Card style={styles.balanceCard}>
-          <Card.Content>
-            <Title style={styles.balanceTitle}>Current Balance</Title>
-            <Text style={[styles.balanceAmount, { color: balance >= 0 ? '#4CAF50' : '#F44336' }]}>
-              ${balance.toLocaleString()}
-            </Text>
-            <View style={styles.balanceRow}>
-              <View style={styles.balanceItem}>
-                <Text style={styles.balanceLabel}>Income</Text>
-                <Text style={[styles.balanceValue, { color: '#4CAF50' }]}>
-                  +${dashboardData.totalIncome.toLocaleString()}
-                </Text>
-              </View>
-              <View style={styles.balanceItem}>
-                <Text style={styles.balanceLabel}>Expenses</Text>
-                <Text style={[styles.balanceValue, { color: '#F44336' }]}>
-                  -${dashboardData.totalExpenses.toLocaleString()}
-                </Text>
-              </View>
-            </View>
-          </Card.Content>
-        </Card>
-
-        {/* Quick Stats */}
-        <View style={styles.quickStats}>
-          <Surface style={styles.statCard}>
-            <Text style={styles.statNumber}>{dashboardData.totalBills}</Text>
-            <Text style={styles.statLabel}>Total Bills</Text>
-          </Surface>
-          <Surface style={styles.statCard}>
-            <Text style={[styles.statNumber, { color: '#FF9800' }]}>
-              {dashboardData.upcomingBills}
-            </Text>
-            <Text style={styles.statLabel}>Due Soon</Text>
-          </Surface>
-        </View>
-
-        {/* Spending Trend Chart */}
-        <Card style={styles.chartCard}>
-          <Card.Content>
-            <Title>Spending Trend</Title>
-            <LineChart
-              data={chartData}
-              width={width - 60}
-              height={200}
-              chartConfig={{
-                backgroundColor: theme.colors.surface,
-                backgroundGradientFrom: theme.colors.surface,
-                backgroundGradientTo: theme.colors.surface,
-                decimalPlaces: 0,
-                color: (opacity = 1) => `rgba(81, 149, 255, ${opacity})`,
-                labelColor: (opacity = 1) => theme.colors.onSurface,
-              }}
-              bezier
-              style={styles.chart}
-            />
-          </Card.Content>
-        </Card>
-
-        {/* Expense Breakdown */}
-        <Card style={styles.chartCard}>
-          <Card.Content>
-            <Title>Expense Breakdown</Title>
-            <PieChart
-              data={expenseData}
-              width={width - 60}
-              height={200}
-              chartConfig={{
-                color: (opacity = 1) => theme.colors.onSurface,
-              }}
-              accessor="amount"
-              backgroundColor="transparent"
-              paddingLeft="15"
-              style={styles.chart}
-            />
-          </Card.Content>
-        </Card>
       </ScrollView>
 
       {/* Floating Action Button */}
@@ -375,5 +445,15 @@ const styles = StyleSheet.create({
     margin: 16,
     right: 0,
     bottom: 0,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#666',
   },
 });
